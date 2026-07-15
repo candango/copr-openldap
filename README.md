@@ -1,29 +1,87 @@
 # Candango OpenLDAP COPR
 
-Packaging scaffold for the `candango/openldap` COPR project.
+This repository contains the packaging recipe and validation material for the
+[`candango/openldap`](https://copr.fedorainfracloud.org/coprs/candango/openldap/)
+COPR project.
 
-This project targets Rocky Linux 10 and exists to build OpenLDAP with validated
-native Argon2id support. Bcrypt remains provided by Rocky's `libxcrypt`
-implementation through OpenLDAP's `{CRYPT}` scheme.
+The goal is to provide an OpenLDAP package for Rocky Linux 10 with validated
+native Argon2id support. Bcrypt compatibility is provided through the system
+`libxcrypt` implementation and OpenLDAP's `{CRYPT}` scheme.
 
-## Status
+## Current status
 
-The RPM recipe is scaffolding and is **not ready for deployment**. Resolve the
-TODOs in `openldap.spec` and `sources` before building or publishing packages.
+The repository is currently a packaging scaffold and is **not ready for
+production deployment or release**. Source pinning, the complete RPM spec,
+artifact builds and end-to-end validation are still required.
 
-Read these files first:
+## Requirements
 
-- [`AGENTS.md`](AGENTS.md) — agent operating rules;
-- [`CONTEXT.md`](CONTEXT.md) — project context and decisions;
-- [`docs/build.md`](docs/build.md) — build and validation workflow;
-- [`docs/ldap-configuration.md`](docs/ldap-configuration.md) — OpenLDAP,
-  `slappasswd`, SSSD and PAM configuration and validation.
+Local development requires:
 
-Local operator infrastructure and lab access details belong in the ignored
-`LAB_INFO.md`; they are not part of the tracked project documentation.
+- RPM build tooling, including `rpmspec` and `rpmbuild`;
+- GNU Make;
+- the dependencies declared by `openldap.spec`;
+- an approved Rocky Linux 10 build and validation environment for release work.
 
-## License
+## Common commands
 
-The packaging repository's original files are MIT-licensed. The OpenLDAP
-software retains its upstream OpenLDAP Public License and other applicable
-upstream notices.
+Validate the spec and local package checks:
+
+```bash
+make spec-check
+make test
+```
+
+Build the source and binary RPMs after all source and packaging TODOs have been
+resolved:
+
+```bash
+make build
+```
+
+Remove local RPM build directories:
+
+```bash
+make clean
+```
+
+Do not publish or deploy artifacts produced before the complete validation
+workflow passes.
+
+## Repository layout
+
+```text
+openldap.spec                 RPM package definition
+sources                       Pinned source archives and checksums
+patches/                      Local upstream patches, when required
+tests/                        Non-destructive package and integration checks
+docs/                         Build, configuration and validation guidance
+Makefile                      Local build and validation targets
+```
+
+## Password schemes
+
+- `{ARGON2}` is the preferred native OpenLDAP server-side scheme for this
+  project and requires the Argon2 password module.
+- `{CRYPT}$2b$...` provides bcrypt compatibility through Rocky `libxcrypt`.
+- `{SSHA}`, `{SHA}`, `{SMD5}` and `{MD5}` are compatibility schemes only.
+- `{ARGON2ID}` and `{BCRYPT}` are not separate scheme names in this packaging
+  path.
+
+Argon2id support must be demonstrated using the built RPM. It must not be
+inferred only from a configure flag or package description.
+
+## Security and release policy
+
+Do not commit credentials, private keys, LDAP dumps, generated password hashes,
+tokens or other secret material. COPR builds must use explicit, pinned source
+inputs and must not depend on arbitrary network access during the build.
+
+Release artifacts require package provenance, dependency review, controlled
+signing outside the public repository and approved Rocky Linux validation.
+
+## Licensing
+
+Original repository scaffolding is MIT-licensed. The OpenLDAP source and RPM
+retain the upstream OpenLDAP Public License and all applicable upstream notices.
+The repository's MIT license must not be used as the OpenLDAP package license.
