@@ -1,0 +1,3 @@
+# OpenLDAP service defaults for the Candango RPM.
+SLAPD_URLS="ldap:/// ldapi:///"
+SLAPD_OPTIONS="-F /etc/openldap/slapd.d"
