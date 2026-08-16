@@ -1,6 +1,6 @@
 Name:           openldap
 Version:        2.6.10
-Release:        2%{?dist}.candango
+Release:        1.el10_2_1.candango
 Summary:        OpenLDAP server and client with native Argon2id support
 
 License:        OpenLDAP Public License
@@ -125,5 +125,5 @@ install -D -m 0644 %{SOURCE1} %{buildroot}%{_sysconfdir}/sysconfig/slapd
 %{_mandir}/man8/*
 
 %changelog
-* Tue Jul 14 2026 Candango Packaging <packages@candango.org> - 2.6.10-1.candango
+* Tue Jul 14 2026 Candango Packaging <packages@candango.org> - 2.6.10-1.el10_2_1.candango
 - Scaffold the Rocky Linux 10 Argon2id-enabled OpenLDAP package.

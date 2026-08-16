@@ -1,0 +1,163 @@
+---
+- name: Prepare Rocky build host for Candango OpenLDAP
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    project_root: "{{ playbook_dir | dirname }}"
+    openldap_version: "2.6.10"
+    source_archive_name: "openldap-{{ openldap_version }}.tgz"
+    source_manifest: "{{ project_root }}/sources"
+    build_user: ""
+    build_home: "/home/{{ build_user }}"
+    rpm_build_tree: "{{ build_home }}/rpmbuild"
+    rpm_sources_dir: "{{ rpm_build_tree }}/SOURCES"
+    rpm_specs_dir: "{{ rpm_build_tree }}/SPECS"
+    build_packages:
+      - rpm-build
+      - rpmdevtools
+      - redhat-rpm-config
+      - gcc
+      - gcc-c++
+      - make
+      - autoconf
+      - automake
+      - libtool
+      - libtool-ltdl-devel
+      - pkgconf-pkg-config
+      - openssl-devel
+      - cyrus-sasl-devel
+      - libargon2-devel
+      - libxcrypt-devel
+      - lmdb-devel
+      - systemd-devel
+
+  pre_tasks:
+    - name: Require Rocky Linux 10 x86_64
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Rocky'
+          - ansible_facts.distribution_major_version == '10'
+          - ansible_facts.architecture == 'x86_64'
+        fail_msg: >-
+          This playbook requires Rocky Linux 10 x86_64; found
+          {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
+          {{ ansible_facts.architecture }}.
+
+    - name: Require an explicit non-root build user
+      ansible.builtin.assert:
+        that:
+          - build_user | length > 0
+          - build_user != 'root'
+        fail_msg: >-
+          Provide the non-root remote build user explicitly with
+          -e build_user=<user>.
+
+    - name: Verify x86-64-v2 CPU support
+      ansible.builtin.command:
+        argv:
+          - /lib64/ld-linux-x86-64.so.2
+          - --help
+      register: loader_help
+      changed_when: false
+      failed_when: "'x86-64-v2 (supported, searched)' not in loader_help.stdout"
+
+  tasks:
+    - name: Install Candango OpenLDAP build dependencies
+      ansible.builtin.dnf:
+        name: "{{ build_packages }}"
+        state: present
+
+    - name: Initialize the per-user RPM build tree
+      become_user: "{{ build_user }}"
+      ansible.builtin.command: rpmdev-setuptree
+      args:
+        chdir: "{{ build_home }}"
+      environment:
+        HOME: "{{ build_home }}"
+      changed_when: false
+
+    - name: Ensure RPM staging directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ build_user }}"
+        mode: '0755'
+      loop:
+        - "{{ rpm_sources_dir }}"
+        - "{{ rpm_specs_dir }}"
+
+    - name: Stage the OpenLDAP spec
+      ansible.builtin.copy:
+        src: "{{ project_root }}/openldap.spec"
+        dest: "{{ rpm_specs_dir }}/openldap.spec"
+        owner: "{{ build_user }}"
+        mode: '0644'
+
+    - name: Stage the pinned source manifest
+      ansible.builtin.copy:
+        src: "{{ source_manifest }}"
+        dest: "{{ rpm_sources_dir }}/sources"
+        owner: "{{ build_user }}"
+        mode: '0644'
+
+    - name: Stage the Candango slapd defaults
+      ansible.builtin.copy:
+        src: "{{ project_root }}/slapd.sysconfig"
+        dest: "{{ rpm_sources_dir }}/slapd.sysconfig"
+        owner: "{{ build_user }}"
+        mode: '0644'
+
+    - name: Require the pinned source archive on the build host
+      ansible.builtin.stat:
+        path: "{{ rpm_sources_dir }}/{{ source_archive_name }}"
+      register: source_archive_stat
+
+    - name: Fail when the pinned source archive is absent
+      ansible.builtin.assert:
+        that:
+          - source_archive_stat.stat.exists
+          - source_archive_stat.stat.isreg
+        fail_msg: >-
+          Expected {{ source_archive_name }} in {{ rpm_sources_dir }}.
+          The playbook does not download or transfer the upstream source.
+
+    - name: Validate the pinned source archive on the build host
+      become_user: "{{ build_user }}"
+      ansible.builtin.command:
+        argv:
+          - sha256sum
+          - --check
+          - sources
+        chdir: "{{ rpm_sources_dir }}"
+      register: source_checksum
+      changed_when: false
+
+    - name: Verify RPM preparation tools
+      ansible.builtin.command:
+        argv:
+          - "{{ item }}"
+          - --version
+      loop:
+        - rpmbuild
+        - rpmspec
+        - gcc
+        - make
+      changed_when: false
+
+    - name: Record the target RPM architecture
+      ansible.builtin.command:
+        argv:
+          - rpm
+          - --eval
+          - "%{_target_cpu}"
+      register: rpm_architecture
+      changed_when: false
+
+    - name: Require x86_64 RPM target
+      ansible.builtin.assert:
+        that:
+          - rpm_architecture.stdout | trim == 'x86_64'
+        fail_msg: "Unexpected RPM target: {{ rpm_architecture.stdout | trim }}"
+        success_msg: "RPM target is {{ rpm_architecture.stdout | trim }}"

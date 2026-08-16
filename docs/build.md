@@ -131,6 +131,29 @@ command -v rpmspec rpmbuild gcc make
 rpm --eval '%{_target_cpu}'
 ```
 
+The preparation can be executed from a Fedora control node with the
+repository's Ansible playbook. The target needs only SSH access, Python and
+sudo; Ansible, Go and this source tree remain on the control node:
+
+```bash
+ansible-playbook \
+  -i '<build-host>,' \
+  -u '<build-user>' \
+  --private-key '<ssh-key>' \
+  -e build_user='<build-user>' \
+  ansible/prepare-rocky-build.yml
+```
+
+The inline inventory keeps the target out of tracked repository data. The
+Rocky host and its approved repositories must already be prepared. The pinned
+OpenLDAP archive must already exist in the remote user's `rpmbuild/SOURCES`
+directory. The playbook validates Rocky Linux 10 x86_64 and x86-64-v2, installs
+the declared OpenLDAP build dependencies, initializes the remote user's RPM
+tree, stages the spec and Candango sources, and verifies the upstream archive
+against `sources`. It does not download or transfer the upstream archive, run
+`rpmbuild`, install OpenLDAP, sign artifacts, or configure the public Candango
+repository.
+
 Use only approved Rocky repositories for build dependencies. Do not add
 unreviewed COPR repositories, download dependencies during `%build`, or place
 credentials and private signing keys on the build host.
@@ -319,16 +342,21 @@ validation results and snapshot restore result. Do not commit credentials,
 private keys, LDAP dumps, password values, generated hashes or transient host
 access details.
 
-## COPR release gate
+## Internal RPM release gate
 
-The COPR project is `candango/openldap` and the target chroot is:
+The published repository target is:
 
 ```text
-alma+epel-10-x86_64_v2
+rocky/10/x86_64_v2
 ```
 
-Only submit after the local spec, source checksum, artifact inspection and
-approved Rocky lab validation pass. COPR builds must use explicit pinned
-inputs and must not depend on arbitrary network access. Signing keys remain
-outside the repository and build workers. Production promotion requires a
-separate approval and signed release evidence.
+Follow [the RPM signing runbook](signing.md) to sign every distributed RPM,
+generate repository metadata, sign `repomd.xml`, and verify both package and
+metadata signatures. Only publish after the pinned source checksum, artifact
+inspection and approved Rocky lab validation pass. Signing keys remain outside
+the repository and build workers. Production distribution through Ansible
+requires separate signed release evidence and approval.
+
+The historical COPR target was `alma+epel-10-x86_64_v2`; it remains relevant
+only to reproduce the original packaging environment, not as the publication
+path.
