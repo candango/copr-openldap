@@ -1,0 +1,2 @@
+# OpenLDAP runtime directory for slapd.args and slapd.pid
+d /run/openldap 0755 ldap ldap -

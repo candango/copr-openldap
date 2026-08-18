@@ -7,6 +7,9 @@ License:        OpenLDAP Public License
 URL:            https://www.openldap.org/
 Source0:        https://www.openldap.org/software/download/OpenLDAP/openldap-release/openldap-%{version}.tgz
 Source1:        slapd.sysconfig
+Source2:        openldap.sysusers
+Source3:        slapd.tmpfiles
+Source4:        slapd.ldif
 
 BuildRequires:  gcc
 BuildRequires:  make
@@ -20,6 +23,7 @@ BuildRequires:  libargon2-devel
 BuildRequires:  libxcrypt-devel
 BuildRequires:  lmdb-devel
 BuildRequires:  systemd-devel
+BuildRequires:  systemd-rpm-macros
 
 
 %description
@@ -45,6 +49,8 @@ building software against OpenLDAP.
 %package servers
 Summary:        OpenLDAP directory server
 Requires:       %{name}%{?_isa} = %{version}-%{release}
+Requires(pre):  shadow-utils
+%{?systemd_requires}
 
 %description servers
 The OpenLDAP directory server and its service files.
@@ -73,9 +79,41 @@ export CFLAGS CXXFLAGS
 %install
 %make_install
 install -D -m 0644 %{SOURCE1} %{buildroot}%{_sysconfdir}/sysconfig/slapd
+# Generate slapd.d from the packaged safe baseline on first installation.
+rm -f %{buildroot}%{_sysconfdir}/openldap/slapd.conf \
+      %{buildroot}%{_sysconfdir}/openldap/slapd.ldif \
+      %{buildroot}%{_sysconfdir}/openldap/slapd.conf.default \
+      %{buildroot}%{_sysconfdir}/openldap/slapd.ldif.default
+install -D -m 0644 %{SOURCE2} %{buildroot}%{_sysusersdir}/openldap.conf
+install -D -m 0644 %{SOURCE3} %{buildroot}%{_tmpfilesdir}/slapd.conf
+install -D -m 0644 %{SOURCE4} %{buildroot}%{_datadir}/openldap-servers/slapd.ldif
+install -d -m 0750 %{buildroot}%{_sysconfdir}/openldap/slapd.d
+install -d -m 0700 %{buildroot}%{_sharedstatedir}/ldap
+
+%pre servers
+# Keep the service account creation compatible with Rocky systemd-sysusers.
+getent group ldap >/dev/null || groupadd -f -g 55 -r ldap || :
+if ! getent passwd ldap >/dev/null; then
+    if ! getent passwd 55 >/dev/null; then
+        useradd -r -u 55 -g 55 -d %{_sharedstatedir}/ldap -s /sbin/nologin -c "OpenLDAP server" ldap || :
+    else
+        useradd -r -g 55 -d %{_sharedstatedir}/ldap -s /sbin/nologin -c "OpenLDAP server" ldap || :
+    fi
+fi
 
 %post servers
 %systemd_post slapd.service
+
+if [ ! -f %{_sysconfdir}/openldap/slapd.d/cn=config.ldif ] && [ ! -f %{_sysconfdir}/openldap/slapd.conf ]; then
+    mkdir -p %{_sysconfdir}/openldap/slapd.d || :
+    %{_sbindir}/slapadd -F %{_sysconfdir}/openldap/slapd.d -n0 -l %{_datadir}/openldap-servers/slapd.ldif
+    chown -R ldap:ldap %{_sysconfdir}/openldap/slapd.d
+    /usr/bin/systemctl try-restart slapd.service >/dev/null 2>&1 || :
+fi
+
+if [ "$1" -ge 1 ]; then
+    /usr/bin/systemctl condrestart slapd.service >/dev/null 2>&1 || :
+fi
 
 %preun servers
 %systemd_preun slapd.service
@@ -114,8 +152,15 @@ install -D -m 0644 %{SOURCE1} %{buildroot}%{_sysconfdir}/sysconfig/slapd
 %{_sbindir}/*
 %{_libexecdir}/slapd
 %{_libexecdir}/openldap/
-%{_sysconfdir}/openldap/
+%dir %{_sysconfdir}/openldap
+%config(noreplace) %{_sysconfdir}/openldap/ldap.conf*
+%config(noreplace) %{_sysconfdir}/openldap/schema/*
+%dir %attr(0750,ldap,ldap) %{_sysconfdir}/openldap/slapd.d
 %config(noreplace) %{_sysconfdir}/sysconfig/slapd
+%{_sysusersdir}/openldap.conf
+%{_tmpfilesdir}/slapd.conf
+%dir %attr(0700,ldap,ldap) %{_sharedstatedir}/ldap
+%{_datadir}/openldap-servers/slapd.ldif
 %{_unitdir}/slapd.service
 %{_mandir}/man5/ldif.5*
 %{_mandir}/man5/lloadd.conf.5*
